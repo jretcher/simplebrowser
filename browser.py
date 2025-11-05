@@ -1,6 +1,7 @@
 import socket
 import ssl
 from threading import Timer
+import gzip
 
 DEFAULT_URL = "file:///home/retcherj/simplebrowser/localFileTest.txt"
 SCHEMES = ["http", "https", "file", "data", "view-source"]
@@ -85,12 +86,28 @@ class URL:
     def handle200s(self, response):
         self.redirect_cnt = 0
         self.parseResponseHeaders(response)
+        
+        c_encoding = self.response_headers.get("content-encoding", None)
 
-        assert "transfer-encoding" not in self.response_headers
-        assert "content-encoding" not in self.response_headers
+        if c_encoding == "gzip":
+            t_encoding = self.response_headers.get("transfer-encoding", None)
+            if(t_encoding == "chunked"):
+                compressed_content = b""
+                while True:
+                    size = int(response.readline(), 16) # represented in hexadecimal
+                    if size == 0: break
+                    compressed_content += response.read(size)
+                    response.readline() # pass over the extra \r\n
+                content = gzip.decompress(compressed_content)
+            else:
+                response_byte_length = int(self.response_headers["content-length"])
+                compressed_content = response.read(response_byte_length)
+                content = gzip.decompress(compressed_content)
+        else:
+            response_byte_length = int(self.response_headers["content-length"])
+            content = response.read(response_byte_length)
 
-        response_byte_length = int(self.response_headers["content-length"])
-        content = response.read(response_byte_length).decode('utf-8')
+        content = content.decode('utf-8')
 
         self.cacheContent(content)
 
@@ -124,6 +141,7 @@ class URL:
             f"Host: {self.host}",
             f"Connection: keep-alive",
             f"User-Agent: python script",
+            f"Accept-Encoding: gzip",
             "\r\n"
         ]
 
