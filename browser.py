@@ -8,8 +8,12 @@ ENTITIES = {
     "&lt;": "<"
 }
 
+def createActConnKey(host, port):
+    return f"{host}:{port}"
+
 class URL:
     def __init__(self, url):
+        self.active_connections = {}
         self.viewing_source = False
 
         self.scheme, url = url.split(":", 1)
@@ -46,11 +50,16 @@ class URL:
                 self.path = url
 
     def request(self):
-        s = socket.socket(
-            family=socket.AF_INET,
-            type=socket.SOCK_STREAM,
-            proto=socket.IPPROTO_TCP,
-        )
+        act_con_key = createActConnKey(self.host, self.port)
+
+        if(act_con_key in self.active_connections):
+            s = self.active_connections[act_con_key]
+        else:
+            s = socket.socket(
+                family=socket.AF_INET,
+                type=socket.SOCK_STREAM,
+                proto=socket.IPPROTO_TCP,
+            )
 
         # connect takes a single arg - diff fams have diff params
         s.connect((self.host, self.port))
@@ -61,7 +70,7 @@ class URL:
         headers = [
             f"GET {self.path} HTTP/1.1",
             f"Host: {self.host}",
-            f"Connection: close",
+            f"Connection: keep-alive",
             f"User-Agent: python script",
             "\r\n"
         ]
@@ -70,14 +79,14 @@ class URL:
 
         s.send(request.encode("utf8"))
 
-        response = s.makefile("r", encoding="utf8", newline="\r\n")
+        response = s.makefile("rb", newline="\r\n")
 
-        statusline = response.readline()
+        statusline = response.readline().decode('utf-8')
         version, status, explanation = statusline.split(" ", 2)
 
         response_headers = {}
         while True:
-            line = response.readline()
+            line = response.readline().decode('utf-8')
             if line == "\r\n": break
             header, value = line.split(":", 1)
             response_headers[header.casefold()] = value.strip()
@@ -85,8 +94,10 @@ class URL:
         assert "transfer-encoding" not in response_headers
         assert "content-encoding" not in response_headers
 
-        content = response.read()
-        s.close()
+        response_byte_length = int(response_headers["content-length"])
+        content = response.read(response_byte_length).decode('utf-8')
+
+        self.active_connections[act_con_key] = s
 
         return content
     
