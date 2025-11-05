@@ -2,34 +2,40 @@ import socket
 import ssl
 
 DEFAULT_URL = "file:///home/retcherj/simplebrowser/localFileTest.txt"
-SCHEMES = ["http", "https", "file"]
+SCHEMES = ["http", "https", "file", "data"]
 
 class URL:
     def __init__(self, url):
-        self.scheme, url = url.split("://", 1)
+        self.scheme, url = url.split(":", 1)
         assert self.scheme in SCHEMES
 
-        if "/" not in url:
-            url = url + "/"
+        if self.scheme in ["data"]:
+            self.contentType, self.inlineHtml = url.split(",", 1)
 
-        if self.scheme in ["http", "https"]:
-            if self.scheme == "http":
-                self.port = 80
-            elif self.scheme == "https":
-                self.port = 443
+        else:
+            url = url[2:] # file path would have :// originally
 
-            self.host, url = url.split("/", 1)
+            if "/" not in url:
+                url = url + "/"
 
-            if ":" in self.host:
-                self.host, port = self.host.split(":", 1)
-                self.port = int(port)
+            if self.scheme in ["http", "https"]:
+                if self.scheme == "http":
+                    self.port = 80
+                elif self.scheme == "https":
+                    self.port = 443
 
-            self.path = "/" + url
+                self.host, url = url.split("/", 1)
 
-        elif self.scheme == "file":
-            self.path = url
+                if ":" in self.host:
+                    self.host, port = self.host.split(":", 1)
+                    self.port = int(port)
 
-    def webRequest(self):
+                self.path = "/" + url # adding back cause lost in split
+
+            elif self.scheme == "file":
+                self.path = url
+
+    def request(self):
         s = socket.socket(
             family=socket.AF_INET,
             type=socket.SOCK_STREAM,
@@ -74,17 +80,9 @@ class URL:
 
         return content
     
-    def fileRequest(self):
+    def openFile(self):
         with open(self.path) as f:
             return f.read()
-    
-    def request(self):
-        if self.scheme in ["http", "https"]:
-            return self.webRequest()
-        elif self.scheme == 'file':
-            return self.fileRequest()
-        else:
-            raise Exception(f"Unsupported scheme: {self.scheme}")
 
 def show(body):
     in_tag = False
@@ -97,7 +95,15 @@ def show(body):
             print(c, end="")
 
 def load(url):
-    body = url.request()
+    if url.scheme in ["http", "https"]:
+        body = url.request()
+    elif url.scheme == "file":
+        body = url.openFile()
+    elif url.scheme == "data":
+        body = url.inlineHtml
+    else:
+        raise Exception(f"Unsupported scheme: {url.scheme}")
+    
     show(body)
 
 if __name__ == "__main__":
