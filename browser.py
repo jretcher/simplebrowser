@@ -3,6 +3,10 @@ import ssl
 
 DEFAULT_URL = "file:///home/retcherj/simplebrowser/localFileTest.txt"
 SCHEMES = ["http", "https", "file", "data"]
+ENTITIES = {
+    "&gt;": ">",
+    "&lt;": "<"
+}
 
 class URL:
     def __init__(self, url):
@@ -86,13 +90,30 @@ class URL:
 
 def show(body):
     in_tag = False
-    for c in body:
+    i = 0
+    while i < len(body):
+        c = body[i]
         if c == "<":
             in_tag = True
         elif c == ">":
             in_tag = False
+        elif c == "&":
+            entity = ""
+            while c != ";":
+                entity += c
+                i += 1
+                c = body[i]
+            entity += c
+            
+            if(entity in ENTITIES):
+                print(ENTITIES[entity], end="")
+            else:
+                print(entity, end="")
+                
         elif not in_tag:
             print(c, end="")
+
+        i += 1
 
 def load(url):
     if url.scheme in ["http", "https"]:
