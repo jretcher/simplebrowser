@@ -7,6 +7,7 @@ ENTITIES = {
     "&gt;": ">",
     "&lt;": "<"
 }
+MAX_REDIRECT_ATTEMPTS = 5
 
 def createActConnKey(host, port):
     return f"{host}:{port}"
@@ -15,7 +16,11 @@ class URL:
     def __init__(self, url):
         self.active_connections = {}
         self.viewing_source = False
+        self.redirect_cnt = 0
 
+        self.parseUrl(url)
+
+    def parseUrl(self, url):
         self.scheme, url = url.split(":", 1)
         assert self.scheme in SCHEMES
 
@@ -49,23 +54,61 @@ class URL:
             elif self.scheme == "file":
                 self.path = url
 
+    def parseResponseHeaders(self, response):
+        response_headers = {}
+        while True:
+            line = response.readline().decode('utf-8')
+            if line == "\r\n": break
+            header, value = line.split(":", 1)
+            response_headers[header.casefold()] = value.strip()
+        return response_headers
+    
+    def handle300s(self, response):
+        if(self.redirect_cnt > MAX_REDIRECT_ATTEMPTS):
+            raise Exception('Too many redirect atttempts')
+        else:
+            self.redirect_cnt += 1
+
+        response_headers = self.parseResponseHeaders(response)
+        redirect_url = response_headers["location"]
+
+        if(redirect_url[0] == "/"):
+            redirect_url = f"{self.scheme}://{self.host}{redirect_url}"
+
+        self.parseUrl(redirect_url)
+        return self.request()
+        
+
+    def handle200s(self, response):
+        self.redirect_cnt = 0
+        response_headers = self.parseResponseHeaders(response)
+
+        assert "transfer-encoding" not in response_headers
+        assert "content-encoding" not in response_headers
+
+        response_byte_length = int(response_headers["content-length"])
+        content = response.read(response_byte_length).decode('utf-8')
+
+        return content
+
+
     def request(self):
         act_con_key = createActConnKey(self.host, self.port)
 
         if(act_con_key in self.active_connections):
             s = self.active_connections[act_con_key]
+
         else:
             s = socket.socket(
                 family=socket.AF_INET,
                 type=socket.SOCK_STREAM,
                 proto=socket.IPPROTO_TCP,
             )
-
-        # connect takes a single arg - diff fams have diff params
-        s.connect((self.host, self.port))
-        if self.scheme == "https":
-            ctx = ssl.create_default_context()
-            s = ctx.wrap_socket(s, server_hostname=self.host)
+            s.connect((self.host, self.port))
+            if self.scheme == "https":
+                ctx = ssl.create_default_context()
+                s = ctx.wrap_socket(s, server_hostname=self.host)
+            self.active_connections[act_con_key] = s
 
         headers = [
             f"GET {self.path} HTTP/1.1",
@@ -83,23 +126,15 @@ class URL:
 
         statusline = response.readline().decode('utf-8')
         version, status, explanation = statusline.split(" ", 2)
+        status = int(status)
 
-        response_headers = {}
-        while True:
-            line = response.readline().decode('utf-8')
-            if line == "\r\n": break
-            header, value = line.split(":", 1)
-            response_headers[header.casefold()] = value.strip()
+        if 300 <= status and status < 400:
+            return self.handle300s(response)
+        elif 200 <= status and status < 300:
+            return self.handle200s(response)
+        else:
+            raise Exception(f"Unknown status: {status}")
 
-        assert "transfer-encoding" not in response_headers
-        assert "content-encoding" not in response_headers
-
-        response_byte_length = int(response_headers["content-length"])
-        content = response.read(response_byte_length).decode('utf-8')
-
-        self.active_connections[act_con_key] = s
-
-        return content
     
     def openFile(self):
         with open(self.path) as f:
