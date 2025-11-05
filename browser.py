@@ -2,7 +2,7 @@ import socket
 import ssl
 
 DEFAULT_URL = "file:///home/retcherj/simplebrowser/localFileTest.txt"
-SCHEMES = ["http", "https", "file", "data"]
+SCHEMES = ["http", "https", "file", "data", "view-source"]
 ENTITIES = {
     "&gt;": ">",
     "&lt;": "<"
@@ -10,6 +10,8 @@ ENTITIES = {
 
 class URL:
     def __init__(self, url):
+        self.viewing_source = False
+
         self.scheme, url = url.split(":", 1)
         assert self.scheme in SCHEMES
 
@@ -17,7 +19,11 @@ class URL:
             self.contentType, self.inlineHtml = url.split(",", 1)
 
         else:
-            url = url[2:] # file path would have :// originally
+            if self.scheme == "view-source":
+                self.viewing_source = True
+                self.scheme, url = url.split("://", 1)
+            else:
+                url = url[2:] # file path would have :// originally
 
             if "/" not in url:
                 url = url + "/"
@@ -125,7 +131,10 @@ def load(url):
     else:
         raise Exception(f"Unsupported scheme: {url.scheme}")
     
-    show(body)
+    if(url.viewing_source):
+        print(body)
+    else:
+        show(body)
 
 if __name__ == "__main__":
     import sys
