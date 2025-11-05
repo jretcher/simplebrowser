@@ -1,5 +1,6 @@
 import socket
 import ssl
+from threading import Timer
 
 DEFAULT_URL = "file:///home/retcherj/simplebrowser/localFileTest.txt"
 SCHEMES = ["http", "https", "file", "data", "view-source"]
@@ -9,6 +10,8 @@ ENTITIES = {
 }
 MAX_REDIRECT_ATTEMPTS = 5
 
+browser_cache = {}
+
 def createActConnKey(host, port):
     return f"{host}:{port}"
 
@@ -17,6 +20,7 @@ class URL:
         self.active_connections = {}
         self.viewing_source = False
         self.redirect_cnt = 0
+        self.request_method = "GET"
 
         self.parseUrl(url)
 
@@ -55,13 +59,12 @@ class URL:
                 self.path = url
 
     def parseResponseHeaders(self, response):
-        response_headers = {}
+        self.response_headers = {}
         while True:
             line = response.readline().decode('utf-8')
             if line == "\r\n": break
             header, value = line.split(":", 1)
-            response_headers[header.casefold()] = value.strip()
-        return response_headers
+            self.response_headers[header.casefold()] = value.strip()
     
     def handle300s(self, response):
         if(self.redirect_cnt > MAX_REDIRECT_ATTEMPTS):
@@ -69,8 +72,8 @@ class URL:
         else:
             self.redirect_cnt += 1
 
-        response_headers = self.parseResponseHeaders(response)
-        redirect_url = response_headers["location"]
+        self.parseResponseHeaders(response)
+        redirect_url = self.response_headers["location"]
 
         if(redirect_url[0] == "/"):
             redirect_url = f"{self.scheme}://{self.host}{redirect_url}"
@@ -81,18 +84,24 @@ class URL:
 
     def handle200s(self, response):
         self.redirect_cnt = 0
-        response_headers = self.parseResponseHeaders(response)
+        self.parseResponseHeaders(response)
 
-        assert "transfer-encoding" not in response_headers
-        assert "content-encoding" not in response_headers
+        assert "transfer-encoding" not in self.response_headers
+        assert "content-encoding" not in self.response_headers
 
-        response_byte_length = int(response_headers["content-length"])
+        response_byte_length = int(self.response_headers["content-length"])
         content = response.read(response_byte_length).decode('utf-8')
+
+        self.cacheContent(content)
 
         return content
 
 
     def request(self):
+        content = self.checkCache()
+        if content:
+            return content
+        
         act_con_key = createActConnKey(self.host, self.port)
 
         if(act_con_key in self.active_connections):
@@ -111,7 +120,7 @@ class URL:
             self.active_connections[act_con_key] = s
 
         headers = [
-            f"GET {self.path} HTTP/1.1",
+            f"{self.request_method} {self.path} HTTP/1.1",
             f"Host: {self.host}",
             f"Connection: keep-alive",
             f"User-Agent: python script",
@@ -125,20 +134,52 @@ class URL:
         response = s.makefile("rb", newline="\r\n")
 
         statusline = response.readline().decode('utf-8')
-        version, status, explanation = statusline.split(" ", 2)
-        status = int(status)
+        version, self.status, explanation = statusline.split(" ", 2)
+        self.status = int(self.status)
 
-        if 300 <= status and status < 400:
+        if 300 <= self.status and self.status < 400:
             return self.handle300s(response)
-        elif 200 <= status and status < 300:
+        elif 200 <= self.status and self.status < 300:
             return self.handle200s(response)
         else:
-            raise Exception(f"Unknown status: {status}")
-
+            raise Exception(f"Unknown status: {self.status}")
     
     def openFile(self):
         with open(self.path) as f:
             return f.read()
+        
+    def checkCache(self):
+        url = f"{self.scheme}://{self.host}{self.path}"
+        return browser_cache[url] if url in browser_cache else None
+    
+    def cacheContent(self, content):
+        url = f"{self.scheme}://{self.host}{self.path}"
+
+        if self.request_method != "GET" or self.status != 200:
+            return
+        
+        if "Cache-Control" in self.response_headers:
+            cache_control_dirs = self.response_headers["Cache-Control"]
+            cache_control_dirs = cache_control_dirs.split(",")
+            if(len(cache_control_dirs) > 2):
+                return
+            
+            age = None
+            for dir in cache_control_dirs:
+                dir = dir.trim()
+                if dir == "no-store":
+                    return
+                elif "max-age" in dir:
+                    dir, age = dir.split("=")
+                else:
+                    return
+
+            if age is not None:
+                def deleteCache():
+                    browser_cache.pop(url, None)
+                Timer(age, deleteCache).start()
+        
+        browser_cache[url] = content
 
 def show(body):
     in_tag = False
