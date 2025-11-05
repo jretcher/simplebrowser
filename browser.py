@@ -1,28 +1,35 @@
 import socket
 import ssl
 
+DEFAULT_URL = "file:///home/retcherj/simplebrowser/localFileTest.txt"
+SCHEMES = ["http", "https", "file"]
+
 class URL:
     def __init__(self, url):
         self.scheme, url = url.split("://", 1)
-        assert self.scheme in ["http", "https"]
-
-        if self.scheme == "http":
-            self.port = 80
-        elif self.scheme == "https":
-            self.port = 443
+        assert self.scheme in SCHEMES
 
         if "/" not in url:
             url = url + "/"
 
-        self.host, url = url.split("/", 1)
+        if self.scheme in ["http", "https"]:
+            if self.scheme == "http":
+                self.port = 80
+            elif self.scheme == "https":
+                self.port = 443
 
-        if ":" in self.host:
-            self.host, port = self.host.split(":", 1)
-            self.port = int(port)
+            self.host, url = url.split("/", 1)
 
-        self.path = "/" + url
+            if ":" in self.host:
+                self.host, port = self.host.split(":", 1)
+                self.port = int(port)
 
-    def request(self):
+            self.path = "/" + url
+
+        elif self.scheme == "file":
+            self.path = url
+
+    def webRequest(self):
         s = socket.socket(
             family=socket.AF_INET,
             type=socket.SOCK_STREAM,
@@ -66,6 +73,18 @@ class URL:
         s.close()
 
         return content
+    
+    def fileRequest(self):
+        with open(self.path) as f:
+            return f.read()
+    
+    def request(self):
+        if self.scheme in ["http", "https"]:
+            return self.webRequest()
+        elif self.scheme == 'file':
+            return self.fileRequest()
+        else:
+            raise Exception(f"Unsupported scheme: {self.scheme}")
 
 def show(body):
     in_tag = False
@@ -83,4 +102,6 @@ def load(url):
 
 if __name__ == "__main__":
     import sys
-    load(URL(sys.argv[1]))
+
+    url = DEFAULT_URL if len(sys.argv) == 1 else sys.argv[1]
+    load(URL(url))
