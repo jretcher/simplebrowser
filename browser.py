@@ -46,19 +46,35 @@ class Browser:
 
     def draw(self):
         self.canvas.delete("all")
+
         for x, y, c in self.display_list:
             if y > self.scroll + HEIGHT: continue
             if y + VSTEP < self.scroll: continue
             self.canvas.create_text(x, y - self.scroll, text=c)
+            last_item_drawn_height = y
+
+        x, y, c = self.display_list[-1]
+        max_page_height = (y + VSTEP)
+
+        if max_page_height > HEIGHT:
+            y2 = HEIGHT * last_item_drawn_height / max_page_height
+            scrollbar_scale = HEIGHT / max_page_height
+            scrollbar_height = HEIGHT * scrollbar_scale
+            y1 = y2 - scrollbar_height
+            self.canvas.create_rectangle(WIDTH-10, y1, WIDTH, y2, fill="lightblue")
 
     def scrolldown(self, e):
         self.scroll += SCROLL_STEP
+        last_scroll_item = self.display_list[-1]
+        x, y, c = last_scroll_item
+        if y + VSTEP - self.scroll < HEIGHT:
+            self.scroll = y + VSTEP - HEIGHT
+        
         self.draw()
 
     def scrollup(self, e):
-        if self.scroll - SCROLL_STEP > 0:
-            self.scroll = self.scroll - SCROLL_STEP
-        else:
+        self.scroll = self.scroll - SCROLL_STEP
+        if self.scroll - SCROLL_STEP < 0:
             self.scroll = 0
         self.draw()
 
@@ -66,6 +82,10 @@ class Browser:
         self.scroll += -1 * e.delta
         if(self.scroll < 0):
             self.scroll = 0
+        last_scroll_item = self.display_list[-1]
+        x, y, c = last_scroll_item
+        if y + VSTEP - self.scroll <= HEIGHT:
+            self.scroll = y + VSTEP - HEIGHT
         self.draw()
 
     def resizewindow(self, e):
