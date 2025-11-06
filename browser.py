@@ -22,7 +22,9 @@ class Browser:
         )
         self.canvas.pack()
         self.scroll = 0
+        self.window.bind("<Up>", self.scrollup)
         self.window.bind("<Down>", self.scrolldown)
+        self.window.bind("<MouseWheel>", self.mousescroll)
 
     def load(self, url):
         if url.scheme in ["http", "https"]:
@@ -48,6 +50,19 @@ class Browser:
 
     def scrolldown(self, e):
         self.scroll += SCROLL_STEP
+        self.draw()
+
+    def scrollup(self, e):
+        if self.scroll - SCROLL_STEP > 0:
+            self.scroll = self.scroll - SCROLL_STEP
+        else:
+            self.scroll = 0
+        self.draw()
+
+    def mousescroll(self, e):
+        self.scroll += -1 * e.delta
+        if(self.scroll < 0):
+            self.scroll = 0
         self.draw()
 
 def layout(text):
