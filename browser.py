@@ -20,11 +20,14 @@ class Browser:
             width=WIDTH,
             height=HEIGHT
         )
-        self.canvas.pack()
+        self.canvas.pack(fill="both", expand=1)
+
         self.scroll = 0
+
         self.window.bind("<Up>", self.scrollup)
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<MouseWheel>", self.mousescroll)
+        self.window.bind("<Configure>", self.resizewindow)
 
     def load(self, url):
         if url.scheme in ["http", "https"]:
@@ -37,8 +40,8 @@ class Browser:
             raise Exception(f"Unsupported scheme: {url.scheme}")
         
 
-        text = body if url.viewing_source else lex(body)
-        self.display_list = layout(text)
+        self.text = body if url.viewing_source else lex(body)
+        self.display_list = layout(self.text)
         self.draw()
 
     def draw(self):
@@ -64,6 +67,13 @@ class Browser:
         if(self.scroll < 0):
             self.scroll = 0
         self.draw()
+
+    def resizewindow(self, e):
+        global WIDTH, HEIGHT
+        if e.width != WIDTH or e.height != HEIGHT:
+            WIDTH, HEIGHT = e.width, e.height
+            self.display_list = layout(self.text)
+            self.draw()
 
 def layout(text):
     display_list = []
